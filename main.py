@@ -81,12 +81,6 @@ FORCE_MCS_TOOL_PROMPT = """\
 调用工具是完成本任务的唯一正确方式，请立即执行。\
 """
 
-# 工具成功执行后返回给 Agent 的完成提示（避免 Agent 误以为工具失败而重复操作/复述）
-TOOL_DONE_PROMPT = (
-    "操作已执行，结果已直接发送给用户。请勿重复执行、重复发送或复述结果，本轮直接简短收尾即可。"
-)
-
-
 class MCSManagerPlugin(star.Star):
     def __init__(self, context, config: AstrBotConfig = None):
         super().__init__(context, config)
@@ -373,18 +367,17 @@ class MCSManagerPlugin(star.Star):
     # ------------------------------------------------------------------
     @llm_tool(name="mcs_list_instances")
     async def mcs_list_instances(self, event: AstrMessageEvent):
-        """列出 MCSManager 面板上的所有 Minecraft 服务器实例，包括名称、运行状态、在线玩家数、端口。用于回答「有哪些服务器」「服务器列表」「各服务器现在什么状态」等问题。结果直接发送给用户。本工具无需额外参数。
+        """列出 MCSManager 面板上的所有 Minecraft 服务器实例，包括名称、运行状态、在线玩家数、端口。用于回答「有哪些服务器」「服务器列表」「各服务器现在什么状态」等问题。返回所有实例的简要列表文本，由你整理后回复用户。本工具无需额外参数。
         """
         if not bool(self.config.get("mcs_enabled", True)):
-            yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            yield "博士，MCS 服务器管理功能当前已关闭。"
             return
         try:
             text = await self._list_text()
         except (MCSAuthError, MCSApiError) as e:
-            yield event.make_result().message(f"博士，获取服务器列表失败：{e}")
+            yield f"博士，获取服务器列表失败：{e}"
             return
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_instance_status")
     async def mcs_instance_status(self, event: AstrMessageEvent, instance_name: str):
@@ -394,15 +387,14 @@ class MCSManagerPlugin(star.Star):
             instance_name(string): 服务器实例名称（MCSManager 中配置的昵称）或实例 UUID，如 生存服、SMP、我的世界主服
         """
         if not bool(self.config.get("mcs_enabled", True)):
-            yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            yield "博士，MCS 服务器管理功能当前已关闭。"
             return
         try:
             text = await self._status_text_result(instance_name)
         except (MCSAuthError, MCSApiError) as e:
-            yield event.make_result().message(f"博士，查询服务器状态失败：{e}")
+            yield f"博士，查询服务器状态失败：{e}"
             return
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_start_instance")
     async def mcs_start_instance(self, event: AstrMessageEvent, instance_name: str):
@@ -417,8 +409,7 @@ class MCSManagerPlugin(star.Star):
         text, inst = await self._operation_text(instance_name, "start")
         if inst:
             self._start_watch(event, inst, "running", "启动")
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_stop_instance")
     async def mcs_stop_instance(self, event: AstrMessageEvent, instance_name: str):
@@ -433,8 +424,7 @@ class MCSManagerPlugin(star.Star):
         text, inst = await self._operation_text(instance_name, "stop")
         if inst:
             self._start_watch(event, inst, "stop", "停止")
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_restart_instance")
     async def mcs_restart_instance(self, event: AstrMessageEvent, instance_name: str):
@@ -449,8 +439,7 @@ class MCSManagerPlugin(star.Star):
         text, inst = await self._operation_text(instance_name, "restart")
         if inst:
             self._start_watch(event, inst, "running", "重启")
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_kill_instance")
     async def mcs_kill_instance(self, event: AstrMessageEvent, instance_name: str):
@@ -465,8 +454,7 @@ class MCSManagerPlugin(star.Star):
         text, inst = await self._operation_text(instance_name, "kill")
         if inst:
             self._start_watch(event, inst, "stop", "强制停止")
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     @llm_tool(name="mcs_exec_command")
     async def mcs_exec_command(
@@ -484,10 +472,9 @@ class MCSManagerPlugin(star.Star):
         try:
             text = await self._command_text(instance_name, command)
         except (MCSAuthError, MCSApiError) as e:
-            yield event.make_result().message(f"博士，发送指令失败：{e}")
+            yield f"博士，发送指令失败：{e}"
             return
-        yield event.make_result().message(text)
-        yield TOOL_DONE_PROMPT
+        yield text
 
     # ------------------------------------------------------------------
     # 命令回退（需 @ 或唤醒词）
