@@ -289,6 +289,57 @@ class MCSManagerPlugin(star.Star):
             inst,
         )
 
+    def _check_manage_permission(self, event: AstrMessageEvent) -> Optional[str]:
+        """校验实例操作权限。返回 None 表示放行，否则返回拒绝提示文本。
+
+        开启 mcs_permission_enabled 后，仅允许：
+        1. 用户 ID 命中 mcs_admin_ids 白名单；
+        2. 群消息中角色命中 mcs_admin_role（默认群主/管理员）。
+        只读查询（实例列表/状态）不在此校验范围内。
+        """
+        if not bool(self.config.get("mcs_permission_enabled", True)):
+            return None
+        sender_id = str(event.get_sender_id() or "").strip()
+        admin_ids = [
+            str(x).strip()
+            for x in (self.config.get("mcs_admin_ids") or [])
+            if str(x).strip()
+        ]
+        if sender_id and sender_id in admin_ids:
+            return None
+        sender = getattr(event, "message_obj", None) and getattr(
+            event.message_obj, "sender", None
+        )
+        role = str(getattr(sender, "role", "") or "").lower()
+        admin_roles = [
+            str(x).strip().lower()
+            for x in (self.config.get("mcs_admin_role") or [])
+            if str(x).strip()
+        ]
+        if role and role in admin_roles:
+            return None
+        return (
+            "博士，该操作需要服务器管理权限。如需管理服务器，请联系管理员在插件配置"
+            "（mcs_admin_ids / mcs_admin_role）中添加你的权限。"
+        )
+
+    def _check_blocked_command(self, command: str) -> Optional[str]:
+        """按 mcs_blocked_commands 校验指令；未配置黑名单（空）则不拦截。"""
+        blocked = [
+            str(x).strip().lower()
+            for x in (self.config.get("mcs_blocked_commands") or [])
+            if str(x).strip()
+        ]
+        if not blocked:
+            return None
+        head = (command or "").strip().lower().split(" ", 1)[0]
+        if head in blocked:
+            return (
+                f"博士，指令「{command}」属于危险指令（{head}），已被插件拦截。"
+                "如需使用请联系管理员调整 mcs_blocked_commands 配置。"
+            )
+        return None
+
     def _check_command_allowed(self, command: str) -> Optional[str]:
         """按 mcs_command_whitelist 校验指令；未配置白名单（空）则允许全部。"""
         whitelist = [
@@ -316,6 +367,9 @@ class MCSManagerPlugin(star.Star):
         blocked = self._check_command_allowed(cmd)
         if blocked:
             return blocked
+        dangerous = self._check_blocked_command(cmd)
+        if dangerous:
+            return dangerous
         inst, hint = await self._resolve_instance(instance_name)
         if not inst:
             return hint
@@ -406,6 +460,10 @@ class MCSManagerPlugin(star.Star):
         if not bool(self.config.get("mcs_enabled", True)):
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
             return
+        denied = self._check_manage_permission(event)
+        if denied:
+            yield denied
+            return
         text, inst = await self._operation_text(instance_name, "start")
         if inst:
             self._start_watch(event, inst, "running", "启动")
@@ -420,6 +478,10 @@ class MCSManagerPlugin(star.Star):
         """
         if not bool(self.config.get("mcs_enabled", True)):
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            return
+        denied = self._check_manage_permission(event)
+        if denied:
+            yield denied
             return
         text, inst = await self._operation_text(instance_name, "stop")
         if inst:
@@ -436,6 +498,10 @@ class MCSManagerPlugin(star.Star):
         if not bool(self.config.get("mcs_enabled", True)):
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
             return
+        denied = self._check_manage_permission(event)
+        if denied:
+            yield denied
+            return
         text, inst = await self._operation_text(instance_name, "restart")
         if inst:
             self._start_watch(event, inst, "running", "重启")
@@ -450,6 +516,10 @@ class MCSManagerPlugin(star.Star):
         """
         if not bool(self.config.get("mcs_enabled", True)):
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            return
+        denied = self._check_manage_permission(event)
+        if denied:
+            yield denied
             return
         text, inst = await self._operation_text(instance_name, "kill")
         if inst:
@@ -468,6 +538,10 @@ class MCSManagerPlugin(star.Star):
         """
         if not bool(self.config.get("mcs_enabled", True)):
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            return
+        denied = self._check_manage_permission(event)
+        if denied:
+            yield denied
             return
         try:
             text = await self._command_text(instance_name, command)
@@ -522,6 +596,11 @@ class MCSManagerPlugin(star.Star):
             event.stop_event()
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
             return
+        denied = self._check_manage_permission(event)
+        if denied:
+            event.stop_event()
+            yield event.make_result().message(denied)
+            return
         text = (event.get_message_str() or "").replace(keyword, "", 1).strip()
         if not text:
             event.stop_event()
@@ -567,6 +646,11 @@ class MCSManagerPlugin(star.Star):
         if not bool(self.config.get("mcs_enabled", True)):
             event.stop_event()
             yield event.make_result().message("博士，MCS 服务器管理功能当前已关闭。")
+            return
+        denied = self._check_manage_permission(event)
+        if denied:
+            event.stop_event()
+            yield event.make_result().message(denied)
             return
         text = (event.get_message_str() or "").replace("mc命令", "", 1).strip()
         # 第一个词是实例名称，其余为控制台指令

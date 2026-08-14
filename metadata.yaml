@@ -2,7 +2,7 @@ name: mcs_manager
 display_name: MCS服务器管理
 desc: "管理 MCSManager 面板上部署的 Minecraft 服务器实例：实例列表/状态查询/启动/停止/重启/强制停止/发送控制台指令（say、op、白名单、give 等），支持 Agent 对话自动调用工具"
 help: "对机器人说「帮我启动生存服」「XX服还在运行吗」「在生存服执行 op Steve」，或使用唤醒词命令：mc列表 / mc查询 / mc启动 / mc停止 / mc重启 / mc强停 / mc命令"
-version: 1.1.1
+version: 1.1.3
 author: siwuli
 repo: https://github.com/siwuli/AstrBot_siwu-mcs-manager
 astrbot_version: ">=4.0.0"

@@ -39,28 +39,54 @@ class MCSManagerAPI:
         self.password = password or ""
         self.timeout = timeout
         self._token = None
+        self._auth_mode = ""  # "" / "apikey" / "token" / "session"
+        self._authed = False
+        self._session = None
 
     # ------------------------------------------------------------------ 认证
     async def ensure_auth(self) -> None:
-        """确保已具备认证凭据：优先 API Key；否则用账号密码登录获取 token。"""
+        """确保已具备认证凭据。
+
+        认证策略（自动兼容 MCSM v10 与 v9）：
+        1. 配置了 mcs_api_key 时，先以 `X-Submit-Key` 探测一个面板接口；
+           v10 面板接受 API Key，v9 面板不接受（会返回 [Forbidden] 权限不足）。
+        2. 探测失败或未配置 key 时，改用账号密码登录：
+           - v10：`POST /api/auth/login` 返回 token，用 `Authorization: Bearer`；
+           - v9：登录后通过 session cookie 维持会话。
+        """
+        if self._authed:
+            return
         if self.api_key:
-            return
-        if self._token:
-            return
-        if not self.username or not self.password:
-            raise MCSAuthError(
-                "未配置 MCS 面板凭据：请在插件配置中填写 mcs_api_key，"
-                "或 mcs_username + mcs_password"
+            try:
+                await self._raw_request("GET", "/api/service/remote_services")
+                self._auth_mode = "apikey"
+                self._authed = True
+                logger.info("MCS 面板使用 API Key 认证")
+                return
+            except MCSApiError:
+                # 面板拒绝 API Key（常见于 MCSM v9），回退账号密码登录
+                pass
+        if self.username and self.password:
+            data = await self._raw_request(
+                "POST", "/api/auth/login",
+                json={"username": self.username, "password": self.password},
             )
-        data = await self._raw_request(
-            "POST", "/api/auth/login",
-            json={"username": self.username, "password": self.password},
+            token = (data or {}).get("token") if isinstance(data, dict) else None
+            self._auth_mode = "token" if token else "session"
+            if token:
+                self._token = token
+            self._authed = True
+            logger.info("MCS 面板登录成功（%s 模式）", self._auth_mode)
+            return
+        if self.api_key:
+            raise MCSAuthError(
+                "MCS 面板拒绝了 API Key（疑似 MCSM v9 面板，不支持 X-Submit-Key 访问面板接口）。"
+                "请在插件配置中填写 mcs_username + mcs_password 改用账号密码登录。"
+            )
+        raise MCSAuthError(
+            "未配置 MCS 面板凭据：请在插件配置中填写 mcs_api_key，"
+            "或 mcs_username + mcs_password"
         )
-        token = (data or {}).get("token")
-        if not token:
-            raise MCSAuthError("MCS 面板登录失败：返回结果中没有 token，请检查账号密码")
-        self._token = token
-        logger.info("MCS 面板登录成功")
 
     def _headers(self) -> dict:
         headers = {
@@ -69,9 +95,9 @@ class MCSManagerAPI:
             # [Forbidden] 无法找到请求头 x-requested-with: xmlhttprequest
             "X-Requested-With": "XMLHttpRequest",
         }
-        if self.api_key:
+        if self._auth_mode == "apikey":
             headers["X-Submit-Key"] = self.api_key
-        elif self._token:
+        elif self._auth_mode == "token":
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
@@ -82,12 +108,14 @@ class MCSManagerAPI:
 
     async def _raw_request(self, method: str, path: str, **kwargs):
         url = self.base_url + path
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.request(
-                method, url, headers=self._headers(), **kwargs
-            ) as resp:
+        if self._session is None:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            )
+        # 复用同一会话以保持登录态（v9 的 session cookie / v10 的 token）
+        async with self._session.request(
+            method, url, headers=self._headers(), **kwargs
+        ) as resp:
                 try:
                     payload = await resp.json(content_type=None)
                 except Exception:

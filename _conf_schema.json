@@ -12,8 +12,8 @@
     "default": "http://127.0.0.1:23333"
   },
   "mcs_api_key": {
-    "description": "API Key（推荐）",
-    "hint": "面板设置里生成的 API Key，通过请求头 X-Submit-Key 认证；留空则使用下方账号密码登录",
+    "description": "MCSM 面板 API Key",
+    "hint": "MCSM v10 面板支持 X-Submit-Key（推荐）。MCSM v9 面板不接受 API Key，请清空此项并改用 mcs_username + mcs_password 登录",
     "type": "string",
     "default": ""
   },
@@ -46,6 +46,30 @@
     "hint": "仅允许发送匹配这些前缀的指令（如 say、op、whitelist、list）；留空表示允许全部指令。每行一个前缀，需为完整指令的起始部分",
     "type": "list",
     "default": []
+  },
+  "mcs_permission_enabled": {
+    "description": "启用操作权限校验",
+    "hint": "开启后，启动/停止/重启/强停/发指令等操作仅允许 mcs_admin_ids 白名单用户或群内 mcs_admin_role 角色执行；实例列表/状态查询不受限",
+    "type": "bool",
+    "default": true
+  },
+  "mcs_admin_ids": {
+    "description": "可操作服务器实例的用户 ID 白名单",
+    "hint": "平台用户 ID（如 QQ 号），每行一个。私聊消息无群角色，只能靠此白名单放行",
+    "type": "list",
+    "default": []
+  },
+  "mcs_admin_role": {
+    "description": "群内可操作服务器实例的角色",
+    "hint": "QQ 平台群主 owner、管理员 admin；留空则群消息仅按 mcs_admin_ids 白名单放行",
+    "type": "list",
+    "default": ["owner", "admin"]
+  },
+  "mcs_blocked_commands": {
+    "description": "控制台危险指令黑名单",
+    "hint": "命中黑名单的指令（按首个单词匹配）一律拦截，防止绕过面板操作直接控制服务端。默认拦截 stop、restart",
+    "type": "list",
+    "default": ["stop", "restart"]
   },
   "mcs_force_agent_tool": {
     "description": "强制 Agent 调用 MCS 工具",
