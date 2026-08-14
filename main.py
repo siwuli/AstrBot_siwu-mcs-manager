@@ -47,12 +47,15 @@ STATUS_TEXT = {
     "unknown": "未知",
 }
 
-# 操作类型 → (面板接口动词, 目标状态, 中文动词)
+# v10 实例 status 为数字：0=已停止 1=运行中
+STATUS_NUM_TEXT = {0: "已停止", 1: "运行中"}
+
+# 操作类型 → (面板接口动词, 目标状态(中文), 中文动词)
 OPERATIONS = {
-    "start": ("open", "running", "启动"),
-    "stop": ("close", "stop", "停止"),
-    "restart": ("restart", "running", "重启"),
-    "kill": ("kill", "stop", "强制停止"),
+    "start": ("open", "运行中", "启动"),
+    "stop": ("close", "已停止", "停止"),
+    "restart": ("restart", "运行中", "重启"),
+    "kill": ("kill", "已停止", "强制停止"),
 }
 
 # 状态轮询间隔（秒）
@@ -103,7 +106,15 @@ class MCSManagerPlugin(star.Star):
 
     @staticmethod
     def _status_text(inst: dict) -> str:
-        status = str(inst.get("info", {}).get("status") or "unknown").lower()
+        """实例状态中文文本。v10 顶层 status 为数字（0/1），兼容字符串。"""
+        status = (inst or {}).get("status")
+        if isinstance(status, (int, float)):
+            return STATUS_NUM_TEXT.get(int(status), STATUS_TEXT["unknown"])
+        status = str(status or "").lower()
+        if status in STATUS_TEXT:
+            return STATUS_TEXT[status]
+        # 兼容旧格式：status 在 info 下
+        status = str((inst or {}).get("info", {}).get("status") or "").lower()
         return STATUS_TEXT.get(status, status)
 
     @staticmethod
@@ -112,7 +123,7 @@ class MCSManagerPlugin(star.Star):
         nickname = cfg.get("nickname") or (inst.get("instanceUuid") or "?")[:8]
         status = MCSManagerPlugin._status_text(inst)
         players = f"{info.get('currentPlayers', 0)}/{info.get('maxPlayers', '?')}"
-        port = cfg.get("port") or info.get("port") or "-"
+        port = (cfg.get("pingConfig") or {}).get("port") or cfg.get("port") or "-"
         return f"{nickname}｜{status}｜在线 {players}｜端口 {port}"
 
     async def _resolve_instance(self, name_or_uuid: str):
@@ -202,7 +213,7 @@ class MCSManagerPlugin(star.Star):
                 detail = await api.get_instance(
                     instance.get("daemon_id"), instance.get("instanceUuid")
                 )
-                last = str((detail or {}).get("info", {}).get("status") or "").lower()
+                last = MCSManagerPlugin._status_text(detail or {})
             except Exception as e:
                 logger.warning(f"轮询服务器 {nickname} 状态失败: {e}")
             if last == target_status:
@@ -210,7 +221,7 @@ class MCSManagerPlugin(star.Star):
                     event,
                     MessageChain().message(
                         f"博士，服务器【{nickname}】已{op_label}成功"
-                        f"（当前状态：{STATUS_TEXT.get(last, last)}）。"
+                        f"（当前状态：{last}）。"
                     ),
                 )
                 return
@@ -245,15 +256,15 @@ class MCSManagerPlugin(star.Star):
         api = self._new_api()
         detail = await api.get_instance(inst["daemon_id"], inst["instanceUuid"])
         cfg = inst["config"]
-        info = (detail or {}).get("info") or inst["info"]
+        info = (detail or {}).get("info") or inst.get("info") or {}
         nickname = cfg.get("nickname") or inst.get("instanceUuid")
-        status = str(info.get("status") or "unknown").lower()
+        status = self._status_text(detail or inst)
         lines = [
             f"博士，服务器【{nickname}】状态如下：",
-            f"· 状态：{STATUS_TEXT.get(status, status)}",
+            f"· 状态：{status}",
             f"· 在线玩家：{info.get('currentPlayers', 0)}/{info.get('maxPlayers', '?')}",
         ]
-        port = cfg.get("port") or info.get("port")
+        port = (cfg.get("pingConfig") or {}).get("port") or info.get("port")
         if port:
             lines.append(f"· 端口：{port}")
         start_cmd = cfg.get("startCommand") or cfg.get("start_command")
@@ -280,7 +291,9 @@ class MCSManagerPlugin(star.Star):
             return f"博士，服务器【{nickname}】已经处于停止状态，无需重复{op_label}。", None
 
         try:
-            await getattr(api, f"{verb}_instance")(inst["instanceUuid"])
+            await getattr(api, f"{verb}_instance")(
+                inst["daemon_id"], inst["instanceUuid"]
+            )
         except (MCSAuthError, MCSApiError) as e:
             return f"博士，{op_label}服务器【{nickname}】失败：{e}", None
         return (
@@ -376,7 +389,7 @@ class MCSManagerPlugin(star.Star):
         nickname = inst["config"].get("nickname") or inst.get("instanceUuid")
         api = self._new_api()
         try:
-            await api.send_command(inst["instanceUuid"], cmd)
+            await api.send_command(inst["daemon_id"], inst["instanceUuid"], cmd)
         except (MCSAuthError, MCSApiError) as e:
             return f"博士，向服务器【{nickname}】发送指令失败：{e}"
         return f"博士，已向服务器【{nickname}】发送指令：\n{cmd}\n（面板不返回服务端输出，可在 MCS 控制台查看执行结果）"

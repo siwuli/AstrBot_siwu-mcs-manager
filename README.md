@@ -2,7 +2,7 @@
 
 通过 **MCSManager 面板 API** 管理部署在 MCS 平台上的 Minecraft 服务器实例：实例列表、状态查询、启动/停止/重启/强制停止、发送控制台指令（say、op、白名单、give、tp 等），支持 **Agent 对话自动判断触发**。
 
-> 插件 id：`mcs_manager`　当前版本：`1.1.3`
+> 插件 id：`mcs_manager`　当前版本：`1.1.4`
 
 ## 触发方式
 
@@ -104,6 +104,7 @@ python plugins/astrbot/siwu-mcs-manager-1_0/build.py
 
 | 版本 | 更新内容 |
 |---|---|
+| `1.1.4` | 修复 MCSM v10 面板 `[Forbidden] 权限不足`：认证方式从 `X-Submit-Key` 请求头改为 URL 查询参数 `apikey=`（v10 官方认证方式，登录 token 同样走 URL 参数）；接口路径修正为 v10 格式（详情 `/api/instance`、操作 `/api/protected_instance/*`，操作接口补充 `daemonId` 参数）；适配 v10 响应格式（status 为数字）与实例结构（状态/端口字段位置变化） |
 | `1.1.3` | 兼容 MCSM v9 面板：v9 的面板接口不接受 `X-Submit-Key`（会返回 `[Forbidden] 权限不足`），改为自动探测——配置了 API Key 先试 v10 方式，失败则回退账号密码登录（v9 用 session cookie、v10 用 Bearer token）；v9 面板请填 `mcs_username` + `mcs_password` |
 | `1.1.2` | 新增操作权限校验：启动/停止/重启/强停/发指令仅允许 `mcs_admin_ids` 白名单或群内 `mcs_admin_role` 角色（默认群主/管理员），查询类不受限；新增 `mcs_blocked_commands` 危险指令黑名单（默认拦截 stop/restart），防止经控制台指令绕过面板操作；Agent 工具与 mc 系列命令均生效 |
 | `1.1.1` | 修复所有 API 请求被面板拒绝的问题（`[Forbidden] 无法找到请求头 x-requested-with`）：所有请求头统一补充 MCSManager 必需的 `X-Requested-With: XMLHttpRequest`（CSRF 防护） |
