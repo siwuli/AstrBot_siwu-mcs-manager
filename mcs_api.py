@@ -63,7 +63,12 @@ class MCSManagerAPI:
         logger.info("MCS 面板登录成功")
 
     def _headers(self) -> dict:
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            # MCSManager 的 CSRF 防护：所有 API 请求必须携带该头，否则返回
+            # [Forbidden] 无法找到请求头 x-requested-with: xmlhttprequest
+            "X-Requested-With": "XMLHttpRequest",
+        }
         if self.api_key:
             headers["X-Submit-Key"] = self.api_key
         elif self._token:

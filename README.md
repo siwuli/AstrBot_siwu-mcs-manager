@@ -2,7 +2,7 @@
 
 通过 **MCSManager 面板 API** 管理部署在 MCS 平台上的 Minecraft 服务器实例：实例列表、状态查询、启动/停止/重启/强制停止、发送控制台指令（say、op、白名单、give、tp 等），支持 **Agent 对话自动判断触发**。
 
-> 插件 id：`mcs_manager`　当前版本：`1.1.0`
+> 插件 id：`mcs_manager`　当前版本：`1.1.1`
 
 ## 触发方式
 
@@ -95,6 +95,7 @@ python plugins/astrbot/siwu-mcs-manager-1_0/build.py
 
 | 版本 | 更新内容 |
 |---|---|
+| `1.1.1` | 修复所有 API 请求被面板拒绝的问题（`[Forbidden] 无法找到请求头 x-requested-with`）：所有请求头统一补充 MCSManager 必需的 `X-Requested-With: XMLHttpRequest`（CSRF 防护） |
 | `1.1.0` | 工具输出机制调整：所有 Agent 工具改为返回数据文本给 LLM、由 LLM 组织回复（不再直发消息），更适配 SubAgent 委派场景；后台完成推送保留 |
 | `1.0.0` | 初版：注册 7 个 Agent 工具（列表/状态/启动/停止/重启/强停/指令）；mc 系列命令回退；操作后后台轮询状态自动推送；指令白名单；支持 API Key 与账号密码两种认证 |
 
