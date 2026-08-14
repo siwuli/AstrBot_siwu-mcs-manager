@@ -232,3 +232,10 @@ class MCSManagerAPI:
         return await self._protected_op(
             "command", daemon_id, instance_uuid, extra={"command": command}
         )
+
+    # ------------------------------------------------------------------ 资源
+    async def close(self) -> None:
+        """关闭底层 HTTP 会话（后台任务结束时调用，避免连接泄漏）。"""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None

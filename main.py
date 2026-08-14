@@ -47,8 +47,8 @@ STATUS_TEXT = {
     "unknown": "未知",
 }
 
-# v10 实例 status 为数字：0=已停止 1=运行中
-STATUS_NUM_TEXT = {0: "已停止", 1: "运行中"}
+# v10 实例 status 为数字：-1=忙碌(异步任务) 0=已停止 1=停止中 2=启动中 3=运行中
+STATUS_NUM_TEXT = {-1: "忙碌", 0: "已停止", 1: "停止中", 2: "启动中", 3: "运行中"}
 
 # 操作类型 → (面板接口动词, 目标状态(中文), 中文动词)
 OPERATIONS = {
@@ -204,31 +204,43 @@ class MCSManagerPlugin(star.Star):
         nickname = instance.get("config", {}).get("nickname") or instance.get(
             "instanceUuid"
         )
-        wait = int(self.config.get("mcs_operation_wait", 90) or 90)
+        wait = int(self.config.get("mcs_operation_wait", 600) or 600)
         api = self._new_api()
-        deadline = time.monotonic() + wait
-        last = ""
-        while time.monotonic() < deadline:
-            try:
-                detail = await api.get_instance(
-                    instance.get("daemon_id"), instance.get("instanceUuid")
-                )
-                last = MCSManagerPlugin._status_text(detail or {})
-            except Exception as e:
-                logger.warning(f"轮询服务器 {nickname} 状态失败: {e}")
-            if last == target_status:
-                await self._safe_send(
-                    event,
-                    MessageChain().message(
-                        f"博士，服务器【{nickname}】已{op_label}成功"
-                        f"（当前状态：{last}）。"
-                    ),
-                )
-                return
-            await asyncio.sleep(WATCH_INTERVAL)
-        logger.info(
-            f"等待服务器 {nickname} {op_label} 状态确认超时（{wait}s），停止轮询"
-        )
+        try:
+            deadline = time.monotonic() + wait
+            last = ""
+            while time.monotonic() < deadline:
+                try:
+                    detail = await api.get_instance(
+                        instance.get("daemon_id"), instance.get("instanceUuid")
+                    )
+                    last = MCSManagerPlugin._status_text(detail or {})
+                except Exception as e:
+                    logger.warning(f"轮询服务器 {nickname} 状态失败: {e}")
+                if last == target_status:
+                    await self._safe_send(
+                        event,
+                        MessageChain().message(
+                            f"博士，服务器【{nickname}】已{op_label}成功"
+                            f"（当前状态：{last}）。"
+                        ),
+                    )
+                    return
+                await asyncio.sleep(WATCH_INTERVAL)
+            # 超时：不静默放弃，推送提示告知当前状态
+            logger.info(
+                f"等待服务器 {nickname} {op_label} 状态确认超时（{wait}s），停止轮询"
+            )
+            await self._safe_send(
+                event,
+                MessageChain().message(
+                    f"博士，服务器【{nickname}】{op_label}后 {wait} 秒内仍未确认到"
+                    f"「{target_status}」（当前状态：{last or '未知'}）。"
+                    "可能是启动较慢或操作失败，可用「mc查询」查看最新状态。"
+                ),
+            )
+        finally:
+            await api.close()
 
     async def _safe_send(self, event: AstrMessageEvent, chain: MessageChain) -> None:
         try:
@@ -285,10 +297,14 @@ class MCSManagerPlugin(star.Star):
         current = self._status_text(inst)
         api = self._new_api()
 
-        if op in ("start", "restart") and current == "运行中":
-            return f"博士，服务器【{nickname}】已经在运行中，无需重复{op_label}。", None
-        if op in ("stop", "kill") and current == "已停止":
-            return f"博士，服务器【{nickname}】已经处于停止状态，无需重复{op_label}。", None
+        if op in ("start", "restart") and current in ("运行中", "启动中"):
+            return (
+                f"博士，服务器【{nickname}】当前{current}，无需重复{op_label}。", None
+            )
+        if op in ("stop", "kill") and current in ("已停止", "停止中"):
+            return (
+                f"博士，服务器【{nickname}】当前{current}，无需重复{op_label}。", None
+            )
 
         try:
             await getattr(api, f"{verb}_instance")(
